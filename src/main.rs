@@ -10,7 +10,7 @@ use nom::multi::count;
 use anyhow::{Context, Result};
 use tribool::Tribool;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -79,7 +79,7 @@ fn printall(buffer: &[u8]) {
 }
 
 fn main() {
-    let spi = parse("C:\\Users\\yuno\\Documents\\josette\\hand1.bin").unwrap();
+    let spi = parse("C:\\Users\\yuno\\Documents\\josette\\birdspi.bin").unwrap();
 
     let (s3, s1, s2) = spi.slices();
 
@@ -122,12 +122,11 @@ fn main() {
         }
     };
 
-    let size = spi.header.u1 - (s1.len() + s3.len());
-
-    while output.len() < size {
-        println!("target {} output {} data {} {} {} {}", spi.header.u1, output.len(), spi.data.len(), s1.len(), s2.len(), s3.len());
+    while output.len() < spi.header.u1 {
+        println!("header {} target {} output {} data {} {} {} {}", spi.header.u1, spi.header.u1, output.len(), spi.data.len(), s1.len(), s2.len(), s3.len());
         let found = test_found();
         if found.is_indeterminate() {
+            println!("ranout");
             break;
         }
 
@@ -163,14 +162,13 @@ fn main() {
             output.push(byte);
         }
         else {
-    printall(&output[..]);
             let mut a = (s2[s2_offset] as u32) >> 4;
             let b = s2[s2_offset] as usize;
             let c = s2[s2_offset + 1] as usize;
             println!("ff a b c {:02x} {:02x} {:02x}", a, b, c);
             s2_offset += 2;
             if a == 0xF {
-                while s2[s2_offset] != 0xFF {
+                while s2[s2_offset] == 0xFF {
                     a += 0xFF;
                     s2_offset += 1;
                 }
@@ -180,11 +178,12 @@ fn main() {
             }
             let mut pos = output.len() - c - 1;
             a += 3;
+            println!("finala {:02x}", a);
             while a > 0 {
                 a -= 1;
                 // run-length encoding
                 // TODO sized buffer
-                println!("len {:02x} b {:02x} c {:02x}", output.len(), b, c);
+                println!("len {} b {:02x} c {:02x} write {:02x}", output.len(), b, c, output[pos]);
                 output.push(output[pos]);
                 pos += 1;
             }
@@ -192,4 +191,6 @@ fn main() {
     }
 
     printall(&output[..]);
+    let mut out = File::create("C:\\Users\\yuno\\Documents\\josette\\output.bin").unwrap();
+    out.write_all(&output).unwrap();
 }

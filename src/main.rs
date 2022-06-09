@@ -179,7 +179,7 @@ fn do_parse(buffer: &[u8], pos: usize) -> Result<()> {
                 s2_offset += 1;
                 a += d as u32;
             }
-            let mut pos = output.len() - c - 1;
+            let mut pos = output.len() - c - (b & 0xF) * 0x100 - 1;
             a += 3;
             // println!("finala {:02x}", a);
             while a > 0 {

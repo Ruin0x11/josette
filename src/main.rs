@@ -192,10 +192,9 @@ fn printall(buffer: &[u8]) {
     printer.print_all(buffer).unwrap();
 }
 
-pub fn convert_spi0(buffer: &[u8], pos: usize) -> Result<()> {
-    let spi = parse(&buffer[pos..]).unwrap();
-
-    let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\output_{:02x}.spi", pos))?;
+/*
+pub fn convert_spi0(spi: &Spi, index: u32) -> Result<()> {
+    let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\spi_{:02x}.spi", index))?;
     spi.write(&mut out)?;
 
     let (s3, s1, s2) = spi.slices();
@@ -286,13 +285,9 @@ pub fn convert_spi0(buffer: &[u8], pos: usize) -> Result<()> {
     // write_files(&output, &buffer, pos, 32, 32)
     Ok(())
 }
+*/
 
-fn convert_spi1(buffer: &[u8], pos: usize) -> Result<()> {
-    let spi = parse(&buffer[pos..]).unwrap();
-
-    let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\output_{:02x}.spi", pos))?;
-    spi.write(&mut out)?;
-
+pub fn decompress_spi1(spi: &Spi) -> Result<Vec<u8>> {
     let (s3, s1, s2) = spi.slices();
 
     let mut bit_no = 0;
@@ -402,48 +397,23 @@ fn convert_spi1(buffer: &[u8], pos: usize) -> Result<()> {
         }
     }
 
-    write_files(&output, &buffer, pos)
+    Ok(output)
 }
 
-fn write_files(output: &[u8], buffer: &[u8], pos: usize) -> Result<()> {
-    // printall(&output[..]);
-    let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\output_{:02x}.bin", pos))?;
-    out.write_all(&output).unwrap();
+fn write_bmp(decompressed: &[u8], spi: &Spi, palette: &Palette, index: u32) -> Result<()> {
+    // let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\output_{:02x}.bin", pos))?;
+    // out.write_all(&decompressed).unwrap();
 
-    let pal = 3;
-    let pal_begin = 0xf27e0 + (((pal * 0x200) + 0x8078D1C0) - 0x80400000);
-    // let pal_begin = 0x47F920 + (pal * 0x200);
-    let palette = &buffer[pal_begin..pal_begin+0x200];
-    // println!("paladdr {}", pal_begin);
-    // printall(&spi_bitmap[..]);
-    let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\palette.bin"))?;
-    out.write_all(palette).unwrap();
-
-    let palette2 = {
-        // RGB5551
-        let mut palette2 = Vec::new();
-        for i in 0..0x100 {
-            let ind = i * 2;
-            let by = BigEndian::read_u16(&palette[ind..ind+2]);
-            let r = (((by >> 11) & 0x1F) * 255 + 15) / 31;
-            let g = (((by >> 6) & 0x1F) * 255 + 15) / 31;
-            let b = (((by >> 1) & 0x1F) * 255 + 15) / 31;
-            let a = (by & 0x0001) * 255;
-            palette2.push(rgb::RGBA::new(r, g, b, a));
-        }
-        palette2
-    };
-
-    let mut palimg = Image::new(16, 16);
-    for (col, (i, (x, y))) in palette2.iter().zip(palimg.coordinates().enumerate()) {
-        palimg.set_pixel(x, y, px!(col.r, col.g, col.b));
-    }
-    palimg.save(format!("C:\\Users\\yuno\\Documents\\josette\\palette_{:02x}.bmp", pal))?;
+    // let mut palimg = Image::new(16, 16);
+    // for (col, (i, (x, y))) in palette2.iter().zip(palimg.coordinates().enumerate()) {
+    //     palimg.set_pixel(x, y, px!(col.r, col.g, col.b));
+    // }
+    // palimg.save(format!("C:\\Users\\yuno\\Documents\\josette\\palette_{:02x}.bmp", pal))?;
 
     let mut total_width = 0;
     let mut total_height = 0;
 
-    let mut cur = output;
+    let mut cur = decompressed;
     let mut i = 0;
     while cur.len() > 2 {
         let offset_x = BigEndian::read_u16(&cur[0..2]);
@@ -465,10 +435,9 @@ fn write_files(output: &[u8], buffer: &[u8], pos: usize) -> Result<()> {
         i += 1;
     }
 
-    println!("total {}x{} {}pts", total_width, total_height, i);
     let mut img = Image::new(total_width as u32, total_height as u32);
 
-    let mut cur = output;
+    let mut cur = decompressed;
     i = 0;
     while cur.len() > 2 {
         let offset_x = BigEndian::read_u16(&cur[0..2]) as u32;
@@ -477,12 +446,11 @@ fn write_files(output: &[u8], buffer: &[u8], pos: usize) -> Result<()> {
         let height = BigEndian::read_u16(&cur[6..8]) as u32;
         let offset = (width * height) as usize;
         let bitmap_part = &cur[8..8+offset];
-        println!("pt{} {},{} {}x{}", i, offset_x, offset_y, width, height);
 
         for (i, by) in bitmap_part.iter().enumerate() {
             let x = (i as u32 % width);
             let y = (i as u32 / width);
-            let col = palette2[*by as usize];
+            let col = palette.colors[*by as usize];
             img.set_pixel(offset_x + x, offset_y + y, px!(col.r, col.g, col.b));
         }
 
@@ -490,7 +458,7 @@ fn write_files(output: &[u8], buffer: &[u8], pos: usize) -> Result<()> {
         i += 1;
     }
 
-    img.save(format!("C:\\Users\\yuno\\Documents\\josette\\output_{:02x}.bmp", pos))?;
+    img.save(format!("C:\\Users\\yuno\\Documents\\josette\\spi_{}.bmp", index))?;
 
     Ok(())
 }
@@ -542,6 +510,10 @@ pub(crate) unsafe fn transmute_slice<'a, T>(slice: &'a [u8], offset: u32, size: 
     std::slice::from_raw_parts(t_slice.as_ptr() as *const _, size as usize / mem::size_of::<T>())
 }
 
+pub struct Palette {
+    colors: Vec<rgb::RGBA16>
+}
+
 fn parse_objinfos(buffer: &[u8]) -> Result<()>{
     // headers
     let offset = 0x000f27e0;
@@ -561,6 +533,7 @@ fn parse_objinfos(buffer: &[u8]) -> Result<()>{
     let mut objinfos = Vec::new();
     let mut defs = Vec::new();
     let mut spis = Vec::new();
+    let mut palettes = Vec::new();
 
     for i in 0..0x9B4 {
         let ind = offset + i * 0x10;
@@ -620,8 +593,33 @@ fn parse_objinfos(buffer: &[u8]) -> Result<()>{
         spis.push(spi);
     }
 
+    for i in 0..0x60 {
+        let pal_begin = 0xf27e0 + (((i * 0x200) + 0x8078D1C0) - 0x80400000);
+        let palette = &buffer[pal_begin..pal_begin+0x200];
+
+        let mut colors = Vec::new();
+        for i in 0..0x100 {
+            let ind = i * 2;
+
+            // RGB5551
+            let by = BigEndian::read_u16(&palette[ind..ind+2]);
+            let r = (((by >> 11) & 0x1F) * 255 + 15) / 31;
+            let g = (((by >> 6) & 0x1F) * 255 + 15) / 31;
+            let b = (((by >> 1) & 0x1F) * 255 + 15) / 31;
+            let a = (by & 0x0001) * 255;
+
+            colors.push(rgb::RGBA::new(r, g, b, a));
+        }
+
+        palettes.push(Palette { colors: colors })
+    }
+
     for (i, spi) in spis.iter().enumerate() {
         println!("spi {}: {} {:04x}", i, spi.header.magic, spi.header.u1);
+        if spi.header.magic == "SPI1" {
+            let decomp = decompress_spi1(spi)?;
+            write_bmp(&decomp, spi, &palettes[3], i as u32);
+        }
     }
 
     for (i, obj) in objinfos.iter().enumerate() {
@@ -632,7 +630,7 @@ fn parse_objinfos(buffer: &[u8]) -> Result<()>{
         println!("OBJ {}: {:08x}, {}", i, def.frames_offset, def.frame_count);
 
         for frame in def.frames.iter() {
-            println!("\t{:08x} {:08x} {:08x} {} {} {}", frame.idx, frame.kind, frame.id, frame.x, frame.y, frame.delay);
+            println!("\t{:08} {:08x} {:08x} {} {} {}", frame.idx, frame.kind, frame.id, frame.x, frame.y, frame.delay);
         }
     }
 

@@ -4,7 +4,9 @@ extern crate hexyl;
 extern crate tribool;
 extern crate rgb;
 #[macro_use] extern crate bmp;
+extern crate byteorder;
 
+use byteorder::{ByteOrder, BigEndian, LittleEndian};
 use bmp::{Image, Pixel};
 use nom::{ToUsize, IResult};
 use nom::number::streaming::{be_u8, be_u32};
@@ -80,7 +82,7 @@ fn printall(buffer: &[u8]) {
 }
 
 fn do_parse(buffer: &[u8], pos: usize) -> Result<()> {
-    let spi = parse(buffer).unwrap();
+    let spi = parse(&buffer[pos..]).unwrap();
 
     let (s3, s1, s2) = spi.slices();
 
@@ -197,18 +199,32 @@ fn do_parse(buffer: &[u8], pos: usize) -> Result<()> {
 
     let pal = 5;
     let pal_begin = 0xf27e0 + (((pal * 0x200) + 0x8078D1C0) - 0x80400000);
+    // let pal_begin = 0x47F920 + (pal * 0x200);
     let palette = &buffer[pal_begin..pal_begin+0x200];
+    // println!("paladdr {}", pal_begin);
     // printall(palette);
     let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\palette.bin")).unwrap();
     out.write_all(palette).unwrap();
 
     unsafe {
         let spi_bitmap = &output[8..];
-        let raw = std::slice::from_raw_parts(
-            palette.as_ptr().cast::<u16>(),
-            0x400
-        );
-        let palette2: &[rgb::RGBA16] = raw.as_rgba();
+        // RGB5551
+        let mut palette2 = Vec::new();
+        for i in 0..0x100 {
+            let ind = i * 2;
+            let by = BigEndian::read_u16(&palette[ind..ind+2]);
+            let r = (((by >> 11) & 0x1F) * 255 + 15) / 31;
+            let g = (((by >> 6) & 0x1F) * 255 + 15) / 31;
+            let b = (((by >> 1) & 0x1F) * 255 + 15) / 31;
+            let a = (by & 0x0001) * 255;
+            palette2.push(rgb::RGBA::new(r, g, b, a));
+        }
+
+        let mut palimg = Image::new(16, 16);
+        for (col, (i, (x, y))) in palette2.iter().zip(palimg.coordinates().enumerate()) {
+            palimg.set_pixel(x, y, px!(col.r, col.b, col.g));
+        }
+        let _ = palimg.save(format!("C:\\Users\\yuno\\Documents\\josette\\palette_{}.bmp", pal));
 
         let mut img = Image::new(32, 32);
         for (by, (i, (x, y))) in spi_bitmap.iter().zip(img.coordinates().enumerate()) {
@@ -230,6 +246,6 @@ fn main() {
     for (pos, _) in buffer.windows(4).enumerate().filter(|(_, window)| window == &spi1.as_bytes())
     {
         // println!("SPI1! {}", pos);
-        do_parse(&buffer[pos..], pos);
+        do_parse(&buffer, pos);
     }
 }

@@ -458,7 +458,7 @@ fn write_bmp(decompressed: &[u8], spi: &Spi, palette: &Palette, index: u32) -> R
         i += 1;
     }
 
-    img.save(format!("C:\\Users\\yuno\\Documents\\josette\\spi_{}.bmp", index))?;
+    img.save(format!("C:\\Users\\yuno\\Documents\\josette\\spi_{:0>8}.bmp", index))?;
 
     Ok(())
 }
@@ -630,7 +630,7 @@ fn parse_objinfos(buffer: &[u8]) -> Result<()>{
         println!("OBJ {}: {:08x}, {}", i, def.frames_offset, def.frame_count);
 
         for frame in def.frames.iter() {
-            println!("\t{:08} {:08x} {:08x} {} {} {}", frame.idx, frame.kind, frame.id, frame.x, frame.y, frame.delay);
+            println!("\t{:0>8} {:08x} {:08x} {} {} {}", frame.idx, frame.kind, frame.id, frame.x, frame.y, frame.delay);
         }
     }
 

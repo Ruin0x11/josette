@@ -7,8 +7,10 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.57"
+bitflags = "1.3.2"
 bmp = "0.5.0"
 byteorder = "1.4.3"
+clap = { version = "3.1.18", features = ["derive"] }
 hexyl = "0.10.0"
 nom = "7.1.1"
 rgb = "0.8.32"

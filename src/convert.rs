@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use byteorder::{ByteOrder, BigEndian, WriteBytesExt};
 use tribool::Tribool;
 use std::mem;
+use crate::Args;
 use crate::spi::Spi;
 use crate::obj::Palette;
 use crate::writeable::Writeable;
@@ -216,7 +217,7 @@ pub fn decompress_spi1(spi: &Spi) -> Result<Vec<u8>> {
     Ok(output)
 }
 
-fn write_bmp(decompressed: &[u8], spi: &Spi, palette: &Palette, index: u32) -> Result<()> {
+pub fn write_bmp(args: &Args, decompressed: &[u8], spi: &Spi, palette: &Palette, index: u32) -> Result<()> {
     // let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\output_{:02x}.bin", pos))?;
     // out.write_all(&decompressed).unwrap();
 
@@ -274,7 +275,7 @@ fn write_bmp(decompressed: &[u8], spi: &Spi, palette: &Palette, index: u32) -> R
         i += 1;
     }
 
-    img.save(format!("C:\\Users\\yuno\\Documents\\josette\\spi_{:0>8}.bmp", index))?;
+    img.save(args.outpath.join(format!("spi_{:0>8}.bmp", index)))?;
 
     Ok(())
 }

@@ -17,27 +17,31 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use writeable::*;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
-struct Args {
-    /// Name of the person to greet
-    #[clap(short, long)]
-    name: String,
+pub struct Args {
+    /// Path to Wonder Project J2 ROM (.z64)
+    rompath: PathBuf,
 
-    /// Number of times to greet
-    #[clap(short, long, default_value_t = 1)]
-    count: u8,
+    /// Output path
+    outpath: PathBuf,
+
+    /// Palette to use when exporting
+    #[clap(short, long, default_value_t = 0)]
+    palette: usize,
 }
 
 fn main() {
-    let mut f = File::open("C:\\Users\\yuno\\Documents\\Wonder Project J2 - Koruro no Mori no Jozet (Japan).z64").context("Unable to open file").unwrap();
+    let args = Args::parse();
+
+    let mut f = File::open(&args.rompath).context("Unable to open file").unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).context("Unable to read file").unwrap();
 
-    obj::parse_objinfos(&buffer);
+    obj::parse_objinfos(&args, &buffer);
 
     // let spi0 = "SPI0";
     // for (pos, _) in buffer.windows(4).enumerate().filter(|(_, window)| window == &spi0.as_bytes())

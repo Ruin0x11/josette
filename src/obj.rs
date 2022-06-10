@@ -4,6 +4,7 @@ use nom::bytes::streaming::*;
 use nom::multi::count;
 use anyhow::{Context, Result};
 use byteorder::{ByteOrder, BigEndian, WriteBytesExt};
+use crate::Args;
 
 bitflags! {
     #[repr(C)]
@@ -83,7 +84,7 @@ pub struct Palette {
     pub colors: Vec<rgb::RGBA16>
 }
 
-pub fn parse_objinfos(buffer: &[u8]) -> Result<()>{
+pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
     // headers
     let offset = 0x000f27e0;
 
@@ -187,11 +188,11 @@ pub fn parse_objinfos(buffer: &[u8]) -> Result<()>{
     }
 
     for (i, spi) in spis.iter().enumerate() {
-        // println!("spi {}: {} {:04x}", i, spi.header.magic, spi.header.u1);
-        // if spi.header.magic == "SPI1" {
-        //     let decomp = decompress_spi1(spi)?;
-        //     write_bmp(&decomp, spi, &palettes[3], i as u32);
-        // }
+        println!("spi {}: {} {:04x}", i, spi.header.magic, spi.header.u1);
+        if spi.header.magic == "SPI1" {
+            let decomp = crate::convert::decompress_spi1(spi)?;
+            crate::convert::write_bmp(&args, &decomp, spi, &palettes[args.palette], i as u32);
+        }
     }
 
     for (i, obj) in objinfos.iter().enumerate() {

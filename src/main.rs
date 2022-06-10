@@ -42,18 +42,4 @@ fn main() {
     f.read_to_end(&mut buffer).context("Unable to read file").unwrap();
 
     obj::parse_objinfos(&args, &buffer);
-
-    // let spi0 = "SPI0";
-    // for (pos, _) in buffer.windows(4).enumerate().filter(|(_, window)| window == &spi0.as_bytes())
-    // {
-    //     // println!("SPI0! {:02x}", pos);
-    //     convert_spi0(&buffer, pos).unwrap();
-    // }
-
-    // let spi1 = "SPI1";
-    // for (pos, _) in buffer.windows(4).enumerate().filter(|(_, window)| window == &spi1.as_bytes())
-    // {
-    //     println!("SPI1! {:02x}", pos);
-    //     convert_spi1(&buffer, pos).unwrap();
-    // }
 }

@@ -221,12 +221,6 @@ pub fn write_bmp(args: &Args, decompressed: &[u8], spi: &Spi, palette: &Palette,
     // let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\output_{:02x}.bin", pos))?;
     // out.write_all(&decompressed).unwrap();
 
-    // let mut palimg = Image::new(16, 16);
-    // for (col, (i, (x, y))) in palette2.iter().zip(palimg.coordinates().enumerate()) {
-    //     palimg.set_pixel(x, y, px!(col.r, col.g, col.b));
-    // }
-    // palimg.save(format!("C:\\Users\\yuno\\Documents\\josette\\palette_{:02x}.bmp", pal))?;
-
     let mut total_width = 0;
     let mut total_height = 0;
 

@@ -3,6 +3,7 @@ use nom::number::streaming::{be_u8, be_u32};
 use nom::bytes::streaming::*;
 use nom::multi::count;
 use anyhow::{Context, Result};
+use bmp::{Image, Pixel};
 use byteorder::{ByteOrder, BigEndian, WriteBytesExt};
 use crate::Args;
 
@@ -185,6 +186,14 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
         }
 
         palettes.push(Palette { colors: colors })
+    }
+
+    for (i, pal) in palettes.iter().enumerate() {
+        let mut palimg = Image::new(256, 1);
+        for (col, (i, (x, y))) in pal.colors.iter().zip(palimg.coordinates().enumerate()) {
+            palimg.set_pixel(x, y, px!(col.r, col.g, col.b));
+        }
+        palimg.save(args.outpath.join(format!("palette_{:02}.bmp", i)))?;
     }
 
     for (i, spi) in spis.iter().enumerate() {

@@ -4,29 +4,30 @@ use anyhow::{Context, Result};
 use byteorder::{ByteOrder, BigEndian, WriteBytesExt};
 use tribool::Tribool;
 use std::mem;
+use std::collections::HashMap;
 use crate::Args;
 use crate::spi::Spi;
-use crate::obj::Palette;
+use crate::obj::{Palette, ObjDef};
 use crate::writeable::Writeable;
 
 /*
 pub fn convert_spi0(spi: &Spi, index: u32) -> Result<()> {
-    let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\spi_{:02x}.spi", index))?;
-    spi.write(&mut out)?;
+let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\spi_{:02x}.spi", index))?;
+spi.write(&mut out)?;
 
-    let (s3, s1, s2) = spi.slices();
+let (s3, s1, s2) = spi.slices();
 
-    let mut bit_no = 0;
-    let mut s1_offset = 0;
-    let mut s2_offset = 0;
-    let mut s3_offset = 0;
-    let mut pal_offset = 0x10;
-    let mut is_other = false;
+let mut bit_no = 0;
+let mut s1_offset = 0;
+let mut s2_offset = 0;
+let mut s3_offset = 0;
+let mut pal_offset = 0x10;
+let mut is_other = false;
 
-    let mut output = Vec::new();
-    let mut palette = [0u32; 16];
-    for i in 0..16 {
-        palette[i] = i as u32;
+let mut output = Vec::new();
+let mut palette = [0u32; 16];
+for i in 0..16 {
+palette[i] = i as u32;
     }
 
     assert!(spi.header.magic == "SPI0");
@@ -217,10 +218,7 @@ pub fn decompress_spi1(spi: &Spi) -> Result<Vec<u8>> {
     Ok(output)
 }
 
-pub fn write_bmp(args: &Args, decompressed: &[u8], spi: &Spi, palette: &Palette, index: u32) -> Result<()> {
-    // let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\output_{:02x}.bin", pos))?;
-    // out.write_all(&decompressed).unwrap();
-
+fn get_spi_size(spi: &Spi, decompressed: &[u8]) -> (u32, u32) {
     let mut total_width = 0;
     let mut total_height = 0;
 
@@ -232,12 +230,6 @@ pub fn write_bmp(args: &Args, decompressed: &[u8], spi: &Spi, palette: &Palette,
         let width = BigEndian::read_u16(&cur[4..6]);
         let height = BigEndian::read_u16(&cur[6..8]);
 
-        // TODO backgrounds?
-        if offset_x > 256 {
-            println!("Skip {} {}", width, height);
-            return Ok(());
-        }
-
         let offset = (width * height) as usize;
         total_width = std::cmp::max(total_width, offset_x + width);
         total_height = std::cmp::max(total_height, offset_y + height);
@@ -246,10 +238,12 @@ pub fn write_bmp(args: &Args, decompressed: &[u8], spi: &Spi, palette: &Palette,
         i += 1;
     }
 
-    let mut img = Image::new(total_width as u32, total_height as u32);
+    (total_width as u32, total_height as u32)
+}
 
+fn write_spi_partial(img: &mut Image, spi: &Spi, decompressed: &[u8], palette: &Palette, px: u32, py: u32) {
     let mut cur = decompressed;
-    i = 0;
+    let mut i = 0;
     while cur.len() > 2 {
         let offset_x = BigEndian::read_u16(&cur[0..2]) as u32;
         let offset_y = BigEndian::read_u16(&cur[2..4]) as u32;
@@ -262,14 +256,81 @@ pub fn write_bmp(args: &Args, decompressed: &[u8], spi: &Spi, palette: &Palette,
             let x = (i as u32 % width);
             let y = (i as u32 / width);
             let col = palette.colors[*by as usize];
-            img.set_pixel(offset_x + x, offset_y + y, px!(col.r, col.g, col.b));
+            img.set_pixel(offset_x + x + px, offset_y + y + py, px!(col.r, col.g, col.b));
         }
 
         cur = &cur[8+offset..];
         i += 1;
     }
+}
 
-    img.save(args.outpath.join(format!("spi_{:0>8}.bmp", index)))?;
+pub fn write_bmp(args: &Args, decompressed: &[u8], spi: &Spi, palette: &Palette, index: u32) -> Result<()> {
+    // let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\output_{:02x}.bin", pos))?;
+    // out.write_all(&decompressed).unwrap();
 
+    // TODO backgrounds?
+    let offset_x = BigEndian::read_u16(&decompressed[0..2]);
+    if offset_x > 256 {
+        println!("Skip {}", offset_x);
+        return Ok(());
+    }
+
+    let (total_width, total_height) = get_spi_size(spi, decompressed);
+    let mut img = Image::new(total_width as u32, total_height as u32);
+
+    write_spi_partial(&mut img, &spi, decompressed, &palette, 0, 0);
+    img.save(args.outpath.join(format!("spi_{:0>8}.bmp", index)));
+    Ok(())
+}
+
+pub fn write_anim_bmp(args: &Args, def: &ObjDef, index: usize, spis: &[Spi], palette: &Palette) -> Result<()> {
+    let mut total_width = 0;
+    let mut total_height = 0;
+    let mut spi_data = HashMap::new();
+    let mut extra_x = 0;
+    let mut extra_y = 0;
+    let mut extra_x2 = 0;
+    let mut extra_y2 = 0;
+
+    for frame in def.frames.iter() {
+        if (frame.spi_idx & 0x8000) != 0 {
+            break;
+        }
+
+        let spi = &spis[frame.spi_idx as usize];
+        let decomp = crate::convert::decompress_spi1(spi)?;
+
+        let (w, h) = get_spi_size(spi, &decomp);
+        total_width += w + frame.x.abs() as u32;
+        extra_x = std::cmp::max(extra_x, std::cmp::min(frame.x as i32, 0).abs());
+        extra_y = std::cmp::max(extra_y, std::cmp::min(frame.y as i32, 0).abs());
+        extra_x2 = std::cmp::max(extra_x2, std::cmp::max(frame.x as i32, 0).abs());
+        extra_y2 = std::cmp::max(extra_y2, std::cmp::max(frame.y as i32, 0).abs());
+        total_height = std::cmp::max(total_height, h);
+
+        spi_data.insert(frame.spi_idx, decomp);
+    }
+
+    println!("siz {} {}", total_width + (extra_x + extra_x2) as u32 * def.frames.len() as u32, total_height + (extra_y + extra_y2) as u32);
+    let mut img = Image::new(total_width + (extra_x + extra_x2) as u32 * def.frames.len() as u32, total_height + (extra_y + extra_y2) as u32);
+    let mut x = 0;
+
+    for frame in def.frames.iter() {
+        if (frame.spi_idx & 0x8000) != 0 {
+            break;
+        }
+
+        let spi = &spis[frame.spi_idx as usize];
+        let decomp = &spi_data[&frame.spi_idx];
+        let (w, h) = get_spi_size(spi, &decomp);
+
+        let px = (x + frame.x as i32 + extra_x);
+        let py = (frame.y as i32 + extra_y);
+
+        write_spi_partial(&mut img, spi, &decomp, &palette, px as u32, py as u32);
+        x += w as i32 + extra_x + extra_x2;
+    }
+
+    img.save(args.outpath.join(format!("anim_{:0>8}.bmp", index)))?;
     Ok(())
 }

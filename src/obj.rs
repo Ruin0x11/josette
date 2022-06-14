@@ -10,23 +10,23 @@ use crate::Args;
 bitflags! {
     #[repr(C)]
     pub struct ObjInfoFlags: u16 {
-        const EMPTY = 0b0000000000000000;
-        const HASEXTRA  = 0b0000000000000001;
-        const LOOP  = 0b0000000000000010;
-        const UNK3  = 0b0000000000000100;
-        const UNK4  = 0b0000000000001000;
-        const BG2FG = 0b0000000000010000;
-        const UNK6  = 0b0000000000100000;
-        const UNK8  = 0b0000000001000000;
-        const FG2BG = 0b0000000010000000;
-        const UNK10 = 0b0000000100000000;
-        const UNK12 = 0b0000001000000000;
-        const UNK13 = 0b0000010000000000;
-        const UNK14 = 0b0000100000000000;
-        const UNK15 = 0b0001000000000000;
-        const UNK16 = 0b0010000000000000;
-        const UNK17 = 0b0100000000000000;
-        const UNK18 = 0b1000000000000000;
+        const EMPTY    = 0b0000000000000000;
+        const HASEXTRA = 0b0000000000000001;
+        const LOOP     = 0b0000000000000010;
+        const UNK3     = 0b0000000000000100;
+        const UNK4     = 0b0000000000001000;
+        const BG2FG    = 0b0000000000010000;
+        const UNK6     = 0b0000000000100000;
+        const UNK8     = 0b0000000001000000;
+        const FG2BG    = 0b0000000010000000;
+        const UNK10    = 0b0000000100000000;
+        const UNK12    = 0b0000001000000000;
+        const UNK13    = 0b0000010000000000;
+        const UNK14    = 0b0000100000000000;
+        const UNK15    = 0b0001000000000000;
+        const UNK16    = 0b0010000000000000;
+        const UNK17    = 0b0100000000000000;
+        const UNK18    = 0b1000000000000000;
     }
 }
 
@@ -57,7 +57,7 @@ pub struct ObjDef {
 }
 
 pub struct Frame {
-    pub idx: u16,
+    pub spi_idx: u16,
     pub kind: u8,
     pub id: u8,
     pub delay: u8,
@@ -133,7 +133,7 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
         let mut frames = Vec::new();
         for j in 0..frame_count {
             let ind = frames_base_offset + (frames_offset as usize) + (j as usize) * 0xe;
-            let idx = BigEndian::read_u16(&buffer[ind+0..ind+2]);
+            let spi_idx = BigEndian::read_u16(&buffer[ind+0..ind+2]);
             let kind = buffer[ind+2];
             let id = buffer[ind+3];
             let delay = buffer[ind+4];
@@ -143,7 +143,7 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
             let u5 = 0;
             let u6 = 0;
             let u7 = 0;
-            frames.push(Frame { idx, kind, id, delay, u2, x, y, u5, u6, u7 });
+            frames.push(Frame { spi_idx, kind, id, delay, u2, x, y, u5, u6, u7 });
         }
 
         defs.push(ObjDef { frames_offset, u1, u2, u3, u4, u5, frame_count, pad1: 0, pad2: 0, pad3: 0, frames: frames });
@@ -188,6 +188,8 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
         palettes.push(Palette { colors: colors })
     }
 
+    let palette = &palettes[args.palette];
+
     for (i, pal) in palettes.iter().enumerate() {
         let mut palimg = Image::new(256, 1);
         for (col, (i, (x, y))) in pal.colors.iter().zip(palimg.coordinates().enumerate()) {
@@ -197,23 +199,25 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
     }
 
     for (i, spi) in spis.iter().enumerate() {
-        println!("spi {}: {} {:04x}", i, spi.header.magic, spi.header.u1);
-        if spi.header.magic == "SPI1" {
-            let decomp = crate::convert::decompress_spi1(spi)?;
-            crate::convert::write_bmp(&args, &decomp, spi, &palettes[args.palette], i as u32);
-        }
+        // println!("spi {}: {} {:04x}", i, spi.header.magic, spi.header.u1);
+        // if spi.header.magic == "SPI1" {
+        //     let decomp = crate::convert::decompress_spi1(spi)?;
+        //     crate::convert::write_bmp(&args, &decomp, spi, palette, i as u32);
+        // }
     }
 
     for (i, obj) in objinfos.iter().enumerate() {
-        println!("def {}: {:04x} {:04x} {:08x} objs={} extra={} flags={:?}", i, obj.offset1, obj.offset2, obj.u1, obj.obj_count, obj.extra_obj_count, obj.flags);
+        //println!("def {}: {:04x} {:04x} {:08x} objs={} extra={} flags={:?}", i, obj.offset1, obj.offset2, obj.u1, obj.obj_count, obj.extra_obj_count, obj.flags);
     }
 
     for (i, def) in defs.iter().enumerate() {
         println!("OBJ {}: {:08x}, {}", i, def.frames_offset, def.frame_count);
 
         for frame in def.frames.iter() {
-            println!("\t{:0>8} {:08x} {:08x} {} {} {}", frame.idx, frame.kind, frame.id, frame.x, frame.y, frame.delay);
+            println!("\t{:0>8} {:08x} {:08x} {} {} {}", frame.spi_idx, frame.kind, frame.id, frame.x, frame.y, frame.delay);
         }
+
+        crate::convert::write_anim_bmp(&args, &def, i, &spis, &palette)?;
     }
 
     Ok(())

@@ -199,15 +199,15 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
     }
 
     for (i, spi) in spis.iter().enumerate() {
-        // println!("spi {}: {} {:04x}", i, spi.header.magic, spi.header.u1);
-        // if spi.header.magic == "SPI1" {
-        //     let decomp = crate::convert::decompress_spi1(spi)?;
-        //     crate::convert::write_bmp(&args, &decomp, spi, palette, i as u32);
-        // }
+        println!("spi {}: {} {:04x}", i, spi.header.magic, spi.header.u1);
+        if spi.header.magic == "SPI1" {
+            let decomp = crate::convert::decompress_spi1(spi)?;
+            crate::convert::write_bmp(&args, &decomp, spi, palette, i as u32);
+        }
     }
 
     for (i, obj) in objinfos.iter().enumerate() {
-        //println!("def {}: {:04x} {:04x} {:08x} objs={} extra={} flags={:?}", i, obj.offset1, obj.offset2, obj.u1, obj.obj_count, obj.extra_obj_count, obj.flags);
+        println!("def {}: {:04x} {:04x} {:08x} objs={} extra={} flags={:?}", i, obj.offset1, obj.offset2, obj.u1, obj.obj_count, obj.extra_obj_count, obj.flags);
     }
 
     for (i, def) in defs.iter().enumerate() {

@@ -1,9 +1,12 @@
+#![allow(unused_imports)]
+#![allow(dead_code)]
+
 #[macro_use] extern crate anyhow;
 extern crate nom;
 extern crate hexyl;
 extern crate tribool;
 extern crate rgb;
-#[macro_use] extern crate bmp;
+extern crate image;
 extern crate byteorder;
 #[macro_use] extern crate bitflags;
 extern crate clap;
@@ -15,7 +18,7 @@ mod writeable;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use writeable::*;
@@ -32,6 +35,10 @@ pub struct Args {
     /// Palette to use when exporting
     #[clap(short, long, default_value_t = 0)]
     palette: usize,
+
+    /// Print debugging information
+    #[clap(short, long)]
+    debug: bool,
 }
 
 fn main() {
@@ -40,6 +47,10 @@ fn main() {
     let mut f = File::open(&args.rompath).context("Unable to open file").unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).context("Unable to read file").unwrap();
+
+    fs::create_dir_all(args.outpath.join("palette")).unwrap();
+    fs::create_dir_all(args.outpath.join("spi1")).unwrap();
+    fs::create_dir_all(args.outpath.join("anim")).unwrap();
 
     obj::parse_objinfos(&args, &buffer);
 }

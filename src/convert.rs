@@ -1,4 +1,4 @@
-use bmp::{Image, Pixel};
+use image::{ImageBuffer, Rgba, RgbaImage, Pixel};
 use rgb::FromSlice;
 use anyhow::{Context, Result};
 use byteorder::{ByteOrder, BigEndian, WriteBytesExt};
@@ -241,7 +241,7 @@ fn get_spi_size(spi: &Spi, decompressed: &[u8]) -> (u32, u32) {
     (total_width as u32, total_height as u32)
 }
 
-fn write_spi_partial(img: &mut Image, spi: &Spi, decompressed: &[u8], palette: &Palette, px: u32, py: u32) {
+fn write_spi_partial(img: &mut RgbaImage, spi: &Spi, decompressed: &[u8], palette: &Palette, px: u32, py: u32) {
     let mut cur = decompressed;
     let mut i = 0;
     while cur.len() > 2 {
@@ -256,7 +256,7 @@ fn write_spi_partial(img: &mut Image, spi: &Spi, decompressed: &[u8], palette: &
             let x = (i as u32 % width);
             let y = (i as u32 / width);
             let col = palette.colors[*by as usize];
-            img.set_pixel(offset_x + x + px, offset_y + y + py, px!(col.r, col.g, col.b));
+            img.put_pixel(offset_x + x + px, offset_y + y + py, col);
         }
 
         cur = &cur[8+offset..];
@@ -264,10 +264,7 @@ fn write_spi_partial(img: &mut Image, spi: &Spi, decompressed: &[u8], palette: &
     }
 }
 
-pub fn write_bmp(args: &Args, decompressed: &[u8], spi: &Spi, palette: &Palette, index: u32) -> Result<()> {
-    // let mut out = File::create(format!("C:\\Users\\yuno\\Documents\\josette\\output_{:02x}.bin", pos))?;
-    // out.write_all(&decompressed).unwrap();
-
+pub fn write_spi1_png(args: &Args, decompressed: &[u8], spi: &Spi, palette: &Palette, index: u32) -> Result<()> {
     // TODO backgrounds?
     let offset_x = BigEndian::read_u16(&decompressed[0..2]);
     if offset_x > 256 {
@@ -276,25 +273,22 @@ pub fn write_bmp(args: &Args, decompressed: &[u8], spi: &Spi, palette: &Palette,
     }
 
     let (total_width, total_height) = get_spi_size(spi, decompressed);
-    let mut img = Image::new(total_width as u32, total_height as u32);
+    let mut img = RgbaImage::new(total_width as u32, total_height as u32);
 
     write_spi_partial(&mut img, &spi, decompressed, &palette, 0, 0);
-    img.save(args.outpath.join(format!("spi_{:0>8}.bmp", index)));
+    img.save(args.outpath.join(format!("spi1/spi1_pal{:0>2}_{:0>8}.png", palette.index, index)))?;
     Ok(())
 }
 
-pub fn write_anim_bmp(args: &Args, def: &ObjDef, index: usize, spis: &[Spi], palette: &Palette) -> Result<()> {
+pub fn write_anim_png(args: &Args, def: &ObjDef, index: usize, spis: &[Spi], palette: &Palette) -> Result<()> {
     let mut total_width = 0;
     let mut total_height = 0;
     let mut spi_data = HashMap::new();
-    let mut extra_x = 0;
-    let mut extra_y = 0;
-    let mut extra_x2 = 0;
-    let mut extra_y2 = 0;
+    let mut ey = 0;
 
     for frame in def.frames.iter() {
         if (frame.spi_idx & 0x8000) != 0 {
-            break;
+            continue;
         }
 
         let spi = &spis[frame.spi_idx as usize];
@@ -302,35 +296,33 @@ pub fn write_anim_bmp(args: &Args, def: &ObjDef, index: usize, spis: &[Spi], pal
 
         let (w, h) = get_spi_size(spi, &decomp);
         total_width += w + frame.x.abs() as u32;
-        extra_x = std::cmp::max(extra_x, std::cmp::min(frame.x as i32, 0).abs());
-        extra_y = std::cmp::max(extra_y, std::cmp::min(frame.y as i32, 0).abs());
-        extra_x2 = std::cmp::max(extra_x2, std::cmp::max(frame.x as i32, 0).abs());
-        extra_y2 = std::cmp::max(extra_y2, std::cmp::max(frame.y as i32, 0).abs());
-        total_height = std::cmp::max(total_height, h);
+        total_height = std::cmp::max(total_height, h + frame.y as u32);
+        ey = std::cmp::max(ey, frame.y);
 
         spi_data.insert(frame.spi_idx, decomp);
     }
 
-    println!("siz {} {}", total_width + (extra_x + extra_x2) as u32 * def.frames.len() as u32, total_height + (extra_y + extra_y2) as u32);
-    let mut img = Image::new(total_width + (extra_x + extra_x2) as u32 * def.frames.len() as u32, total_height + (extra_y + extra_y2) as u32);
+    let mut img = RgbaImage::new(total_width, total_height + 100);
     let mut x = 0;
 
     for frame in def.frames.iter() {
         if (frame.spi_idx & 0x8000) != 0 {
-            break;
+            continue;
         }
 
         let spi = &spis[frame.spi_idx as usize];
         let decomp = &spi_data[&frame.spi_idx];
         let (w, h) = get_spi_size(spi, &decomp);
 
-        let px = (x + frame.x as i32 + extra_x);
-        let py = (frame.y as i32 + extra_y);
+        let px = x;
+        // println!("th={} y={} h={}", total_height, frame.y, h);
+        let py = ey as i32 - (frame.y as i32);
+        // println!("{},{}", px, py);
 
         write_spi_partial(&mut img, spi, &decomp, &palette, px as u32, py as u32);
-        x += w as i32 + extra_x + extra_x2;
+        x += w as i32;
     }
 
-    img.save(args.outpath.join(format!("anim_{:0>8}.bmp", index)))?;
+    img.save(args.outpath.join(format!("anim/anim_pal{:0>2}_{:0>8}.png", palette.index, index)))?;
     Ok(())
 }

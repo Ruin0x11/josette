@@ -3,9 +3,9 @@ use nom::number::streaming::{be_u8, be_u32};
 use nom::bytes::streaming::*;
 use nom::multi::count;
 use anyhow::{Context, Result};
-use bmp::{Image, Pixel};
 use byteorder::{ByteOrder, BigEndian, WriteBytesExt};
 use crate::Args;
+use image::{Rgba, RgbaImage};
 
 bitflags! {
     #[repr(C)]
@@ -29,7 +29,6 @@ bitflags! {
         const UNK18    = 0b1000000000000000;
     }
 }
-
 
 pub struct ObjInfo {
     pub offset1: u16,
@@ -82,7 +81,8 @@ unsafe fn transmute_slice<'a, T>(slice: &'a [u8], offset: u32, size: u32) -> &'a
 }
 
 pub struct Palette {
-    pub colors: Vec<rgb::RGBA16>
+    pub index: usize,
+    pub colors: Vec<Rgba<u8>>
 }
 
 pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
@@ -128,7 +128,10 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
         let u4 = BigEndian::read_u16(&buffer[ind+10..ind+12]);
         let u5 = BigEndian::read_u32(&buffer[ind+12..ind+16]);
         let frame_count = buffer[ind+16];
-        println!("frames offset {:02x} {} ind {:02x}", frames_offset, i, ind);
+
+        if args.debug {
+            println!("frames offset {:02x} {} ind {:02x}", frames_offset, i, ind);
+        }
 
         let mut frames = Vec::new();
         for j in 0..frame_count {
@@ -140,9 +143,9 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
             let u2 = buffer[ind+5];
             let x = BigEndian::read_i16(&buffer[ind+6..ind+8]);
             let y = BigEndian::read_i16(&buffer[ind+8..ind+10]);
-            let u5 = 0;
-            let u6 = 0;
-            let u7 = 0;
+            let u5 = BigEndian::read_u16(&buffer[ind+10..ind+12]);
+            let u6 = buffer[12];
+            let u7 = buffer[13];
             frames.push(Frame { spi_idx, kind, id, delay, u2, x, y, u5, u6, u7 });
         }
 
@@ -161,7 +164,9 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
             off += 1;
         }
 
-        // println!("spi offset {:02x}: {:02x} {:02x}", i, spi_offset, spi_base_offset + spi_offset as usize);
+        if args.debug {
+            println!("spi offset {:02x}: {:02x} {:02x}", i, spi_offset, spi_base_offset + spi_offset as usize);
+        }
 
         let (_, spi) = crate::spi::spi(&buffer[spi_base_offset+spi_offset as usize..]).map_err(|e| anyhow!("Parsing failed! {:?}", e))?;
         spis.push(spi);
@@ -182,42 +187,49 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
             let b = (((by >> 1) & 0x1F) * 255 + 15) / 31;
             let a = (by & 0x0001) * 255;
 
-            colors.push(rgb::RGBA::new(r, g, b, a));
+            colors.push(Rgba::<u8>([r as u8, g as u8, b as u8, a as u8]));
         }
 
-        palettes.push(Palette { colors: colors })
+        palettes.push(Palette { index: i, colors: colors })
     }
 
     let palette = &palettes[args.palette];
 
     for (i, pal) in palettes.iter().enumerate() {
-        let mut palimg = Image::new(256, 1);
-        for (col, (i, (x, y))) in pal.colors.iter().zip(palimg.coordinates().enumerate()) {
-            palimg.set_pixel(x, y, px!(col.r, col.g, col.b));
+        let mut palimg = RgbaImage::new(256, 1);
+        for (x, col) in pal.colors.iter().enumerate() {
+            palimg.put_pixel(x as u32, 0, *col);
         }
-        palimg.save(args.outpath.join(format!("palette_{:02}.bmp", i)))?;
+        palimg.save(args.outpath.join(format!("palette/palette_{:02}.png", i)))?;
     }
 
     for (i, spi) in spis.iter().enumerate() {
-        println!("spi {}: {} {:04x}", i, spi.header.magic, spi.header.u1);
+        if args.debug {
+            println!("spi {}: {} {:04x}", i, spi.header.magic, spi.header.u1);
+        }
+
         if spi.header.magic == "SPI1" {
             let decomp = crate::convert::decompress_spi1(spi)?;
-            crate::convert::write_bmp(&args, &decomp, spi, palette, i as u32);
+            crate::convert::write_spi1_png(&args, &decomp, spi, palette, i as u32);
         }
     }
 
     for (i, obj) in objinfos.iter().enumerate() {
-        println!("def {}: {:04x} {:04x} {:08x} objs={} extra={} flags={:?}", i, obj.offset1, obj.offset2, obj.u1, obj.obj_count, obj.extra_obj_count, obj.flags);
+        if args.debug {
+            println!("def {}: {:04x} {:04x} {:08x} objs={} extra={} flags={:?}", i, obj.offset1, obj.offset2, obj.u1, obj.obj_count, obj.extra_obj_count, obj.flags);
+        }
     }
 
     for (i, def) in defs.iter().enumerate() {
-        println!("OBJ {}: {:08x}, {}", i, def.frames_offset, def.frame_count);
+        if args.debug {
+            println!("OBJ {}: {:08x}, {}", i, def.frames_offset, def.frame_count);
 
-        for frame in def.frames.iter() {
-            println!("\t{:0>8} {:08x} {:08x} {} {} {}", frame.spi_idx, frame.kind, frame.id, frame.x, frame.y, frame.delay);
+            for frame in def.frames.iter() {
+                println!("\t{:0>8} {:08x} {:08x} {} {} {} {} {} {} {}", frame.spi_idx, frame.kind, frame.id, frame.x, frame.y, frame.delay, frame.u2, frame.u5, frame.u6, frame.u7);
+            }
         }
 
-        crate::convert::write_anim_bmp(&args, &def, i, &spis, &palette)?;
+        crate::convert::write_anim_png(&args, &def, i, &spis, &palette)?;
     }
 
     Ok(())

@@ -39,6 +39,10 @@ pub struct Args {
     /// Print debugging information
     #[clap(short, long)]
     debug: bool,
+
+    /// Don't output SPI1 data
+    #[clap(short, long)]
+    no_spi1: bool,
 }
 
 fn main() {

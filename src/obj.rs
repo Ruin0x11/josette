@@ -152,7 +152,7 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
         defs.push(ObjDef { frames_offset, u1, u2, u3, u4, u5, frame_count, pad1: 0, pad2: 0, pad3: 0, frames: frames });
     }
 
-    for i in 0..0xf81 {
+    for i in 0..0x1303 {
         let mut off = 0;
         let mut spi_offset = 0;
         loop {
@@ -208,9 +208,11 @@ pub fn parse_objinfos(args: &Args, buffer: &[u8]) -> Result<()>{
             println!("spi {}: {} {:04x}", i, spi.header.magic, spi.header.u1);
         }
 
-        if spi.header.magic == "SPI1" {
-            let decomp = crate::convert::decompress_spi1(spi)?;
-            crate::convert::write_spi1_png(&args, &decomp, spi, palette, i as u32);
+        if !args.no_spi1 {
+            if spi.header.magic == "SPI1" {
+                let decomp = crate::convert::decompress_spi1(spi)?;
+                crate::convert::write_spi1_png(&args, &decomp, spi, palette, i as u32);
+            }
         }
     }
 
